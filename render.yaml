@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: alpaca-vol-agent
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.server:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: ALPACA_OPTION_FEED
+        value: opra
+      - key: ALPACA_STOCK_FEED
+        value: iex
+      - key: SYMBOL
+        value: SPY
+      - key: DRY_RUN
+        value: "true"
+      - key: I_UNDERSTAND_THIS_IS_LIVE
+        value: "false"
+      - key: ENABLE_CREDIT_SPREADS
+        value: "true"
+      - key: ENABLE_EQUITY_HEDGE
+        value: "true"
+      - key: TARGET_PORTFOLIO_VOL
+        value: "0.16"
+      - key: KELLY_FRACTION
+        value: "0.40"
+      - key: ALPACA_API_KEY
+        sync: false
+      - key: ALPACA_SECRET_KEY
+        sync: false

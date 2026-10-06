@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Alpaca Vol Agent — Trading Desk</title>
+<script src="/static/lwc.js"></script>
+<script>window.LightweightCharts||document.write('<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"><\/script>')</script>
+<style>
+    :root {
+    --bg: #17181a; --panel: #1f2124; --panel-2: #272a2e; --border: #34383d;
+    --text: #e8e6e3; --text-dim: #9ba0a7; --text-faint: #666b72;
+    --green: #ff8a2b; --green-dim: #a84f0d; --red: #e5534b; --red-dim: #8f2f2a;
+    --amber: #ffb15e; --blue: #ffa552; --purple: #b7bcc4; --orange: #ff8a2b;
+    --mono: 'SF Mono', 'Consolas', 'Menlo', monospace;
+    --sans: Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text); font-family: var(--sans);
+    font-size: 13px; line-height: 1.4;
+  }
+  .topbar {
+    display: flex; align-items: center; gap: 20px; padding: 10px 18px;
+    background: var(--panel); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 100;
+  }
+  .brand { font-weight: 700; font-size: 15px; letter-spacing: 0.3px; }
+  .brand span { color: var(--text-dim); font-weight: 400; }
+  .badge {
+    padding: 3px 9px; border-radius: 4px; font-size: 11px; font-weight: 600;
+    letter-spacing: 0.4px;
+  }
+  .badge.dry { background: rgba(255,165,82,0.15); color: var(--blue); }
+  .badge.live { background: rgba(229,72,77,0.15); color: var(--red); }
+  .badge.open { background: rgba(255,138,43,0.15); color: var(--green); }
+  .badge.closed { background: rgba(155,160,167,0.15); color: var(--text-dim); }
+  .topbar .spacer { flex: 1; }
+  .clock { color: var(--text-dim); font-family: var(--mono); font-size: 12px; }
+  .symbol-select {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 4px; padding: 5px 10px; font-family: var(--mono); font-size: 12px;
+  }
+  button.action {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 4px; padding: 7px 14px; font-size: 12px; font-weight: 600;
+    cursor: pointer; transition: all .15s;
+  }
+  button.action:hover { border-color: var(--blue); color: var(--blue); }
+  button.action:disabled { opacity: 0.5; cursor: wait; }
+  
+
+  .grid {
+    display: grid; grid-template-columns: 2fr 1fr; grid-template-rows: auto;
+    gap: 12px; padding: 12px; max-width: 1800px; margin: 0 auto;
+  }
+  .col-left, .col-right { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; min-width: 0;
+  }
+  .panel-title {
+    display: flex; align-items: center; gap: 8px; font-size: 11px; font-weight: 700;
+    letter-spacing: 0.6px; color: var(--text-dim); margin-bottom: 12px;
+  }
+  .panel-title .live-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--green);
+    box-shadow: 0 0 6px var(--green); animation: pulse 2s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  .panel-title .as-of { margin-left: auto; font-weight: 400; text-transform: none; letter-spacing: 0; color: var(--text-faint); font-size: 10.5px; }
+
+  
+  .chart-toolbar { display: flex; gap: 6px; margin-bottom: 10px; }
+  .tf-btn {
+    background: transparent; border: 1px solid var(--border); color: var(--text-dim);
+    border-radius: 4px; padding: 4px 10px; font-size: 11px; cursor: pointer;
+  }
+  .tf-btn.active { background: var(--panel-2); color: var(--text); border-color: var(--blue); }
+
+  table { width: 100%; border-collapse: collapse; font-family: var(--mono); font-size: 12px; }
+  th { text-align: left; color: var(--text-faint); font-weight: 600; font-size: 10.5px; 
+       letter-spacing: 0.4px; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+  td { padding: 6px 8px; border-bottom: 1px solid rgba(52,56,61,0.5); }
+  tr:last-child td { border-bottom: none; }
+  .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .pos { color: var(--green); } .neg { color: var(--red); } .dim { color: var(--text-faint); }
+  .empty-row td { color: var(--text-faint); text-align: center; padding: 20px; font-family: var(--sans); }
+
+  .stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .stat { background: var(--panel-2); border-radius: 6px; padding: 10px 12px; }
+  .stat .label { font-size: 10.5px; color: var(--text-faint); letter-spacing: 0.4px; margin-bottom: 4px; }
+  .stat .value { font-family: var(--mono); font-size: 17px; font-weight: 600; }
+  .stat .sub { font-size: 10.5px; color: var(--text-dim); margin-top: 2px; }
+
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .bar-row .bar-label { width: 46px; font-size: 11px; color: var(--text-dim); font-family: var(--mono); }
+  .bar-track { flex: 1; height: 8px; background: var(--panel-2); border-radius: 4px; overflow: hidden; position: relative; }
+  .bar-fill { height: 100%; border-radius: 4px; transition: width .3s; }
+  .bar-row .bar-val { width: 58px; text-align: right; font-family: var(--mono); font-size: 11px; }
+
+  .edge-gauge { display: flex; align-items: center; gap: 14px; margin-bottom: 14px; }
+  .edge-track { flex: 1; height: 10px; border-radius: 5px; background: linear-gradient(90deg, var(--red-dim), var(--panel-2) 50%, var(--green-dim)); position: relative; }
+  .edge-marker { position: absolute; top: -3px; width: 3px; height: 16px; background: #fff; border-radius: 2px; box-shadow: 0 0 8px rgba(255,255,255,0.6); }
+  .edge-val { font-family: var(--mono); font-weight: 700; font-size: 15px; min-width: 58px; text-align: right; }
+
+  .rationale-box { background: var(--panel-2); border-radius: 6px; padding: 10px 12px; font-size: 12px; color: var(--text-dim); line-height: 1.6; margin-top: 10px; }
+  .leg-tags { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .leg-tag { font-size: 10.5px; padding: 3px 8px; border-radius: 10px; background: var(--panel-2); color: var(--text-dim); border: 1px solid var(--border); }
+  .leg-tag.agree { border-color: var(--green-dim); color: var(--green); }
+  .leg-tag.disagree { border-color: var(--red-dim); color: var(--red); }
+
+  .event-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid rgba(52,56,61,0.5); font-size: 12px; }
+  .event-row:last-child { border-bottom: none; }
+  .event-chip { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; width: 42px; text-align: center; }
+  .event-chip.FOMC { background: rgba(183,188,196,0.18); color: var(--purple); }
+  .event-chip.CPI { background: rgba(255,177,94,0.18); color: var(--amber); }
+  .event-chip.NFP { background: rgba(255,165,82,0.18); color: var(--blue); }
+  .event-days { margin-left: auto; color: var(--text-faint); font-family: var(--mono); font-size: 11px; }
+
+  .kill-banner {
+    background: rgba(229,72,77,0.12); border: 1px solid var(--red-dim); border-radius: 6px;
+    padding: 10px 12px; color: #ffb3b5; font-size: 12px; font-weight: 600; margin-bottom: 12px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .notes-list { max-height: 180px; overflow-y: auto; font-size: 11.5px; color: var(--text-dim); }
+  .notes-list div { padding: 5px 0; border-bottom: 1px solid rgba(52,56,61,0.4); }
+
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+
+  button.action.primary { background: var(--orange); border-color: var(--orange); color: #1d1408; }
+  button.action.primary:hover { background: #ffa04d; color: #1d1408; }
+  button.action.danger:hover { border-color: var(--red); color: var(--red); }
+  button.action[hidden], .modal[hidden], #toast[hidden], #results[hidden] { display: none; }
+  .badge.paper { background: rgba(255,138,43,0.15); color: var(--orange); }
+  .search { position: relative; }
+  .search input { width: 230px; background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px; font: inherit; font-size: 13px; }
+  .search input:focus, .sel:focus { outline: none; border-color: var(--orange); }
+  #results { position: absolute; top: 40px; left: 0; width: 340px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; z-index: 200; box-shadow: 0 12px 30px rgba(0,0,0,.45); }
+  #results div { display: flex; gap: 10px; padding: 8px 12px; cursor: pointer; }
+  #results div:hover { background: var(--panel-2); }
+  #results b { width: 62px; color: var(--orange); } #results span { color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .strip { display: flex; align-items: baseline; gap: 14px; min-width: 0; font-variant-numeric: tabular-nums; }
+  .strip .sym { font-size: 17px; font-weight: 700; } .strip .nm { color: var(--text-dim); max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .strip .px { font-size: 17px; font-weight: 600; } .strip .rng { color: var(--text-faint); font-size: 12px; }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--border); color: var(--text-dim); }
+  .tag.ok { border-color: var(--green-dim); color: var(--orange); } .tag.bad { border-color: var(--red-dim); color: var(--red); }
+  .sel { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; font: inherit; font-size: 12px; }
+  .chart-head { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .seg { display: flex; gap: 2px; background: var(--panel-2); border-radius: 6px; padding: 2px; }
+  .seg button { background: transparent; border: 0; color: var(--text-dim); border-radius: 4px; padding: 4px 9px; font: inherit; font-size: 12px; cursor: pointer; }
+  .seg button:hover { color: var(--text); } .seg button.on { background: var(--orange); color: #1d1408; font-weight: 600; }
+  #chart-wrap { position: relative; } #chart-container { width: 100%; height: 540px; }
+  #legend { position: absolute; z-index: 5; top: 6px; left: 8px; font-size: 12px; color: var(--text-dim); pointer-events: none; font-variant-numeric: tabular-nums; }
+  #legend b { color: var(--text); margin-right: 8px; } #legend i { font-style: normal; margin-right: 10px; } #legend i em { font-style: normal; color: var(--text); }
+  .sess-state { font-size: 18px; font-weight: 700; margin-bottom: 12px; color: var(--text-dim); } .sess-state.on { color: var(--orange); }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: flex; align-items: center; justify-content: center; z-index: 300; }
+  .modal-card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 22px; width: 420px; max-width: 92vw; }
+  .modal-card h3 { margin: 0 0 8px; font-size: 16px; } .modal-card p { color: var(--text-dim); line-height: 1.55; margin: 0 0 18px; }
+  .modal-card .row { display: flex; justify-content: flex-end; gap: 8px; }
+  #toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--panel-2); border: 1px solid var(--orange); border-radius: 8px; padding: 10px 16px; z-index: 400; max-width: 80vw; }
+
+  .pos { color: #26a69a; } .neg { color: #ef5350; }
+  @media (max-width: 1100px) { .grid { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">VOLAGENT</div>
+  <div class="search">
+    <input id="q" placeholder="Search a ticker or company" autocomplete="off" spellcheck="false">
+    <div id="results" hidden></div>
+  </div>
+  <div class="strip" id="strip">
+    <span class="sym" id="t-sym">—</span><span class="nm" id="t-name"></span>
+    <span class="px" id="t-px"></span><span id="t-chg"></span><span class="rng" id="t-rng"></span><span class="tag" id="t-opt" hidden></span>
+  </div>
+  <div class="spacer"></div>
+  <span id="badge-market" class="badge closed">Market closed</span>
+  <span id="badge-mode" class="badge paper">Paper account</span>
+  <span class="clock" id="clock">--:--:--</span>
+  <button class="action primary" id="btn-run" disabled>Run</button>
+  <button class="action" id="btn-stop" hidden>Stop</button>
+  <button class="action danger" id="btn-flat" hidden title="Stop, cancel open orders, and close positions">Stop and close positions</button>
+</div>
+
+<div id="kill-banner-slot"></div>
+
+<div class="grid">
+  <div class="col-left">
+
+    <div class="panel">
+      <div class="chart-head">
+        <div class="seg" id="tf-bar"></div>
+        <select class="sel" id="type-sel"></select>
+        <div class="seg" id="ind-bar"></div>
+        <div class="seg" id="tool-bar"></div>
+      </div>
+      <div id="chart-wrap"><div id="legend"></div><div id="chart-container"></div></div>
+      <div class="chart-head" style="margin:10px 0 0"><div class="seg" id="range-bar"></div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title"><span class="live-dot"></span>Live Order Blotter<span class="as-of" id="orders-asof">—</span></div>
+      <table>
+        <thead><tr><th>Kind</th><th>Status</th><th class="num">Qty</th><th class="num">Filled</th><th class="num">Avg Price</th><th class="num">Age</th></tr></thead>
+        <tbody id="orders-body"><tr class="empty-row"><td colspan="6">No open orders</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Positions</div>
+      <table>
+        <thead><tr><th>Symbol</th><th class="num">Qty</th><th class="num">Avg cost</th><th class="num">Price</th><th class="num">Mkt Value</th><th class="num">P&amp;L</th><th class="num">Delta</th><th class="num">Gamma</th><th class="num">Vega</th><th class="num">Theta</th></tr></thead>
+        <tbody id="positions-body"><tr class="empty-row"><td colspan="10">No open positions</td></tr></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Agent Reasoning Log<span class="as-of" id="decisions-asof">as of last cycle</span></div>
+      <table>
+        <thead><tr><th>Time</th><th>Regime</th><th class="num">Edge</th><th>Direction</th><th>Orders</th></tr></thead>
+        <tbody id="decisions-body"><tr class="empty-row"><td colspan="5">No cycles run yet</td></tr></tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <div class="col-right">
+
+    <div class="panel">
+      <div class="panel-title">Trading session<span class="as-of" id="sess-asof">—</span></div>
+      <div class="sess-state" id="sess-state">Idle</div>
+      <div class="stat-grid">
+        <div class="stat"><div class="label">Symbol</div><div class="value" id="sess-sym">—</div></div>
+        <div class="stat"><div class="label">Cycles run</div><div class="value" id="sess-cycles">0</div></div>
+        <div class="stat"><div class="label">Orders sent</div><div class="value" id="sess-orders">0</div></div>
+        <div class="stat"><div class="label">Next cycle in</div><div class="value" id="sess-next">—</div></div>
+      </div>
+      <div class="notes-list" id="sess-events" style="margin-top:10px;"><div class="dim">Search a ticker, then press Run.</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Composite Signal</div>
+      <div class="edge-gauge">
+        <div class="edge-track"><div class="edge-marker" id="edge-marker" style="left:50%"></div></div>
+        <div class="edge-val" id="edge-val">—</div>
+      </div>
+      <div class="stat-grid">
+        <div class="stat"><div class="label">Regime</div><div class="value" id="stat-regime">—</div></div>
+        <div class="stat"><div class="label">Forecast Vol</div><div class="value" id="stat-forecast">—</div></div>
+        <div class="stat"><div class="label">Live ATM IV</div><div class="value" id="stat-iv">—</div></div>
+        <div class="stat"><div class="label">VRP z-score</div><div class="value" id="stat-vrpz">—</div></div>
+      </div>
+      <div class="leg-tags" id="leg-tags"></div>
+      <div class="rationale-box" id="rationale-box">Run a cycle to see the agent's reasoning.</div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Risk Panel<span class="as-of" id="risk-asof">—</span></div>
+      <div class="stat-grid" style="margin-bottom:14px;">
+        <div class="stat"><div class="label">Equity</div><div class="value" id="stat-equity">—</div></div>
+        <div class="stat"><div class="label">Drawdown</div><div class="value" id="stat-drawdown">—</div></div>
+        <div class="stat"><div class="label">Daily P&amp;L</div><div class="value" id="stat-daily-pnl">—</div></div>
+        <div class="stat"><div class="label">Weekly P&amp;L</div><div class="value" id="stat-weekly-pnl">—</div></div>
+      </div>
+      <div class="bar-row"><div class="bar-label">Delta</div><div class="bar-track"><div class="bar-fill" id="bar-delta" style="width:0%;background:var(--blue)"></div></div><div class="bar-val" id="bar-delta-val">—</div></div>
+      <div class="bar-row"><div class="bar-label">Gamma</div><div class="bar-track"><div class="bar-fill" id="bar-gamma" style="width:0%;background:var(--purple)"></div></div><div class="bar-val" id="bar-gamma-val">—</div></div>
+      <div class="bar-row"><div class="bar-label">Vega</div><div class="bar-track"><div class="bar-fill" id="bar-vega" style="width:0%;background:var(--amber)"></div></div><div class="bar-val" id="bar-vega-val">—</div></div>
+      <div class="bar-row"><div class="bar-label">Theta</div><div class="bar-track"><div class="bar-fill" id="bar-theta" style="width:0%;background:var(--green)"></div></div><div class="bar-val" id="bar-theta-val">—</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Upcoming Events</div>
+      <div id="events-list"><div class="event-row"><span class="dim">Loading…</span></div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Equity Curve</div>
+      <div id="equity-chart-container" style="height:160px;"></div>
+      <div class="stat-grid" style="margin-top:10px;">
+        <div class="stat"><div class="label">Sharpe</div><div class="value" id="stat-sharpe">—</div></div>
+        <div class="stat"><div class="label">Max DD</div><div class="value" id="stat-maxdd">—</div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">Cycle Notes</div>
+      <div class="notes-list" id="notes-list"><div class="dim">—</div></div>
+    </div>
+
+  </div>
+</div>
+
+<div class="modal" id="modal" hidden><div class="modal-card"><h3 id="m-title"></h3><p id="m-body"></p><div class="row"><button class="action" id="m-cancel">Cancel</button><button class="action primary" id="m-ok">Confirm</button></div></div></div>
+<div id="toast" hidden></div>
+
+<script>
+const API = window.location.origin.includes('null') || window.location.protocol === 'file:'
+  ? 'http://localhost:8000' : '';   // dashboard.html can be opened via file:// or served by the API itself
+
+async function apiGet(path) {
+  try {
+    const r = await fetch(API + path);
+    if (!r.ok) throw new Error(await r.text());
+    return await r.json();
+  } catch (e) { console.error('GET', path, e); return null; }
+}
+async function apiPost(path, body) {
+  const r = await fetch(API + path, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body||{}) });
+  if (!r.ok) throw new Error(await r.text());
+  return await r.json();
+}
+
+// ---------- helpers ----------
+const $ = id => document.getElementById(id);
+const ET = 'America/New_York';
+const fmtET = (t, o) => new Intl.DateTimeFormat('en-US', { timeZone: ET, hour12: false, ...o }).format(new Date(t * 1000));
+function errMsg(e) { try { return JSON.parse(e.message).detail || e.message; } catch (_) { return e.message; } }
+function toast(msg) { const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, 6500); }
+const money = v => v == null ? '—' : '$' + Number(v).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// ---------- candlestick chart ----------
+const TFS = [['1Min','1m'],['3Min','3m'],['5Min','5m'],['15Min','15m'],['30Min','30m'],['1Hour','1H'],['3Hour','3H'],['4Hour','4H'],['1Day','1D'],['1Week','1W'],['1Month','1Mo']];
+const TYPES = [['candles','Candles'],['heikin','Heikin Ashi'],['bars','OHLC bars'],['line','Line'],['area','Area']];
+const INDS = [['sma','SMA 20'],['ema','EMA 50'],['bb','Bollinger'],['vwap','VWAP']];
+const TOOLS = [['cursor','Cursor'],['hline','Horizontal line'],['trend','Trend line'],['clear','Clear drawings']];
+const ORANGE = '#ff8a2b', UP = '#26a69a', DN = '#ef5350';
+let currentSymbol = 'SPY', tickerInfo = null, tf = '5Min', ctype = 'candles', bars = [], tool = 'cursor', pending = null, loadToken = 0;
+const on = { sma: false, ema: false, bb: false, vwap: false };
+let hlines = [], trends = [], hlineObjs = [], trendSeries = [], main = null, indSeries = {};
+const isDaily = () => tf === '1Day' || tf === '1Week' || tf === '1Month';
+
+const chart = LightweightCharts.createChart($('chart-container'), {
+  layout: { background: { color: 'transparent' }, textColor: '#9ba0a7', fontSize: 11 },
+  grid: { vertLines: { color: '#26292d' }, horzLines: { color: '#26292d' } },
+  rightPriceScale: { borderColor: '#34383d', scaleMargins: { top: 0.08, bottom: 0.24 } },
+  timeScale: {
+    borderColor: '#34383d', timeVisible: true, secondsVisible: false, rightOffset: 6,
+    tickMarkFormatter: t => isDaily() ? fmtET(t, tf === '1Day' ? { month: 'short', day: 'numeric' } : { month: 'short', year: '2-digit' }) : fmtET(t, { hour: '2-digit', minute: '2-digit' }),
+  },
+  localization: { timeFormatter: t => fmtET(t, isDaily() ? { month: 'short', day: 'numeric', year: 'numeric' } : { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) + ' ET' },
+  crosshair: { mode: LightweightCharts.CrosshairMode.Normal,
+    vertLine: { color: '#ff8a2b', labelBackgroundColor: '#a84f0d' }, horzLine: { color: '#ff8a2b', labelBackgroundColor: '#a84f0d' } },
+});
+new ResizeObserver(es => { for (const e of es) chart.resize(e.contentRect.width, e.contentRect.height); }).observe($('chart-container'));
+const vol = chart.addHistogramSeries({ priceFormat: { type: 'volume' }, priceScaleId: 'vol', lastValueVisible: false, priceLineVisible: false });
+chart.priceScale('vol').applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+
+const equityChart = LightweightCharts.createChart($('equity-chart-container'), {
+  layout: { background: { color: 'transparent' }, textColor: '#9ba0a7', fontSize: 10 },
+  grid: { vertLines: { visible: false }, horzLines: { color: '#2a2d31' } },
+  rightPriceScale: { borderColor: '#34383d' }, timeScale: { borderColor: '#34383d' },
+});
+const equitySeries = equityChart.addAreaSeries({ lineColor: '#ff8a2b', topColor: 'rgba(255,138,43,0.25)', bottomColor: 'rgba(255,138,43,0.0)', lineWidth: 2 });
+new ResizeObserver(es => { for (const e of es) equityChart.resize(e.contentRect.width, e.contentRect.height); }).observe($('equity-chart-container'));
+
+const norm = b => ({ time: Math.floor(Date.parse(b.t) / 1000), o: b.o, h: b.h, l: b.l, c: b.c, v: b.v || 0 });
+function heikin(src) {
+  const out = []; let pc, po;
+  for (const x of src) {
+    const c = (x.o + x.h + x.l + x.c) / 4, o = pc === undefined ? (x.o + x.c) / 2 : (po + pc) / 2;
+    out.push({ time: x.time, o, c, h: Math.max(x.h, o, c), l: Math.min(x.l, o, c) }); po = o; pc = c;
+  }
+  return out;
+}
+const point = x => (ctype === 'line' || ctype === 'area') ? { time: x.time, value: x.c } : { time: x.time, open: x.o, high: x.h, low: x.l, close: x.c };
+const mainData = () => (ctype === 'heikin' ? heikin(bars) : bars).map(point);
+const volPoint = x => ({ time: x.time, value: x.v, color: x.c >= x.o ? 'rgba(38,166,154,.45)' : 'rgba(239,83,80,.45)' });
+
+function makeMain() {
+  if (main) chart.removeSeries(main);
+  const base = { priceLineColor: ORANGE, lastValueVisible: true };
+  if (ctype === 'line') main = chart.addLineSeries({ ...base, color: ORANGE, lineWidth: 2 });
+  else if (ctype === 'area') main = chart.addAreaSeries({ ...base, lineColor: ORANGE, topColor: 'rgba(255,138,43,.28)', bottomColor: 'rgba(255,138,43,0)', lineWidth: 2 });
+  else if (ctype === 'bars') main = chart.addBarSeries({ ...base, upColor: UP, downColor: DN });
+  else main = chart.addCandlestickSeries({ ...base, upColor: UP, downColor: DN, borderVisible: false, wickUpColor: UP, wickDownColor: DN });
+  hlineObjs = [];
+  redrawHlines();
+}
+
+// indicators
+const closes = () => bars.map(b => b.c);
+function smaArr(n) { const c = closes(); return c.map((_, i) => i < n - 1 ? null : c.slice(i - n + 1, i + 1).reduce((a, b) => a + b, 0) / n); }
+function emaArr(n) { const k = 2 / (n + 1); let e = null; return closes().map((v, i) => (e = i === 0 ? v : v * k + e * (1 - k), i < n - 1 ? null : e)); }
+function bbArr(n, m) {
+  const mid = smaArr(n), c = closes();
+  const sd = c.map((_, i) => i < n - 1 ? null : Math.sqrt(c.slice(i - n + 1, i + 1).reduce((a, v) => a + (v - mid[i]) ** 2, 0) / n));
+  return [mid.map((v, i) => v == null ? null : v + m * sd[i]), mid.map((v, i) => v == null ? null : v - m * sd[i])];
+}
+function vwapArr() {
+  let day = '', pv = 0, vv = 0;
+  return bars.map(b => { const d = fmtET(b.time, { year: 'numeric', month: 'numeric', day: 'numeric' }); if (d !== day) { day = d; pv = vv = 0; }
+    pv += (b.h + b.l + b.c) / 3 * b.v; vv += b.v; return vv ? pv / vv : null; });
+}
+function setLine(key, color, arr, extra) {
+  if (!arr) { if (indSeries[key]) { chart.removeSeries(indSeries[key]); delete indSeries[key]; } return; }
+  if (!indSeries[key]) indSeries[key] = chart.addLineSeries({ color, lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false, ...extra });
+  indSeries[key].setData(arr.map((v, i) => v == null ? null : { time: bars[i].time, value: v }).filter(Boolean));
+}
+function paintInds() {
+  setLine('sma', '#ffc48a', on.sma && smaArr(20));
+  setLine('ema', '#e8e6e3', on.ema && emaArr(50));
+  const bb = on.bb && bbArr(20, 2);
+  setLine('bbu', '#b7bcc4', bb && bb[0], { lineStyle: 2 }); setLine('bbl', '#b7bcc4', bb && bb[1], { lineStyle: 2 });
+  setLine('vwap', '#ff6a00', on.vwap && !isDaily() && vwapArr(), { lineWidth: 2 });
+}
+
+function paint(fit) {
+  main.setData(mainData()); vol.setData(bars.map(volPoint)); paintInds();
+  if (fit) chart.timeScale().fitContent();
+  legend(null);
+}
+
+// drawing tools: horizontal line + trend line
+function redrawHlines() { hlineObjs.forEach(o => { try { main.removePriceLine(o); } catch (_) {} }); hlineObjs = hlines.map(price => main.createPriceLine({ price, color: ORANGE, lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: '' })); }
+function redrawTrends() {
+  trendSeries.forEach(x => chart.removeSeries(x));
+  trendSeries = trends.map(([a, b]) => { const sr = chart.addLineSeries({ color: ORANGE, lineWidth: 2, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }); sr.setData([a, b]); return sr; });
+}
+function setTool(t) {
+  if (t === 'clear') { hlines = []; trends = []; pending = null; redrawHlines(); redrawTrends(); t = 'cursor'; }
+  tool = t; pending = null;
+  document.querySelectorAll('#tool-bar button').forEach(b => b.classList.toggle('on', b.dataset.k === tool));
+  $('chart-container').style.cursor = tool === 'cursor' ? '' : 'crosshair';
+}
+chart.subscribeClick(p => {
+  if (tool === 'cursor' || !p.point || !p.time) return;
+  const price = main.coordinateToPrice(p.point.y);
+  if (price == null) return;
+  if (tool === 'hline') { hlines.push(price); redrawHlines(); setTool('cursor'); }
+  else if (tool === 'trend') {
+    if (!pending) { pending = { time: p.time, value: price }; return; }
+    if (pending.time !== p.time) { const pts = [pending, { time: p.time, value: price }].sort((a, b) => a.time - b.time); trends.push(pts); redrawTrends(); }
+    setTool('cursor');
+  }
+});
+
+// legend
+function legend(p) {
+  const b = p && p.time ? bars.find(x => x.time === p.time) : bars[bars.length - 1];
+  if (!b) { $('legend').innerHTML = ''; return; }
+  const chg = b.c - b.o, pct = b.o ? chg / b.o * 100 : 0, cls = chg >= 0 ? 'pos' : 'neg';
+  const f = v => v.toFixed(2);
+  $('legend').innerHTML = `<b>${currentSymbol} · ${TFS.find(t => t[0] === tf)[1]}</b><i>O <em>${f(b.o)}</em></i><i>H <em>${f(b.h)}</em></i><i>L <em>${f(b.l)}</em></i><i>C <em>${f(b.c)}</em></i><i class="${cls}">${chg >= 0 ? '+' : ''}${f(chg)} (${pct.toFixed(2)}%)</i><i>Vol <em>${Number(b.v).toLocaleString()}</em></i>`;
+}
+chart.subscribeCrosshairMove(legend);
+
+const iso = ms => new Date(ms).toISOString().slice(0, 19) + 'Z';
+const RANGES = [['1D','1Min',4,1],['5D','5Min',10,5],['1M','30Min',35,30],['3M','1Hour',96,91],['6M','1Day',187,182],['1Y','1Day',370,365],['5Y','1Week',1830,1826],['Max','1Month',0,0]];
+let exhausted = false, loadingOlder = false, marketOpen = false, lastSync = 0;
+const barsUrl = q => `/chart/bars?symbol=${encodeURIComponent(currentSymbol)}&timeframe=${tf}&${q}`;
+const etDay = t => fmtET(t, { year: 'numeric', month: 'numeric', day: 'numeric' });
+
+async function loadChart(range) {
+  const my = ++loadToken; exhausted = false;
+  const q = !range ? 'count=800' : range[2] === 0 ? 'start=max' : 'start=' + iso(Date.now() - range[2] * 864e5);
+  const d = await apiGet(barsUrl(q));
+  if (my !== loadToken) return;
+  if (!d || !d.bars || !d.bars.length) { bars = []; main.setData([]); vol.setData([]); paintInds(); toast(`No ${tf} data for ${currentSymbol}.`); return; }
+  bars = d.bars.filter(b => b.o != null && b.c != null).map(norm);
+  paint(false); showView(range); showPrice(bars[bars.length - 1].c);
+}
+function showView(range) {
+  const n = bars.length, last = bars[n - 1].time, ts = chart.timeScale();
+  if (range && range[3] === 0) return ts.fitContent();
+  if (range && range[3]) {
+    let from = last - range[3] * 86400;
+    if (range[3] <= 5) { const days = [...new Set(bars.map(b => etDay(b.time)))], first = days[Math.max(0, days.length - range[3])]; from = bars.find(b => etDay(b.time) === first).time; }
+    return ts.setVisibleRange({ from: Math.max(from, bars[0].time), to: last });
+  }
+  ts.setVisibleLogicalRange({ from: Math.max(0, n - 130), to: n + 6 });
+}
+async function loadOlder() {
+  if (loadingOlder || exhausted || !bars.length) return;
+  loadingOlder = true; const my = loadToken;
+  try {
+    const d = await apiGet(barsUrl(`count=1000&end=${iso(bars[0].time * 1000)}`));
+    if (my !== loadToken || !d) return;
+    const older = (d.bars || []).map(norm).filter(b => b.time < bars[0].time);
+    if (!older.length) { exhausted = true; return; }
+    const r = chart.timeScale().getVisibleLogicalRange();
+    bars = older.concat(bars); paint(false);
+    if (r) chart.timeScale().setVisibleLogicalRange({ from: r.from + older.length, to: r.to + older.length });
+  } finally { loadingOlder = false; }
+}
+chart.timeScale().subscribeVisibleLogicalRangeChange(r => { if (r && r.from < 30) loadOlder(); });
+async function syncBars() {
+  const my = loadToken, d = await apiGet(barsUrl('count=2'));
+  if (!d || my !== loadToken || !d.bars || !d.bars.length || !bars.length) return;
+  for (const raw of d.bars) { const b = norm(raw), l = bars[bars.length - 1]; if (b.time === l.time) bars[bars.length - 1] = b; else if (b.time > l.time) bars.push(b); }
+  const l = bars[bars.length - 1];
+  if (ctype === 'heikin') main.setData(mainData()); else main.update(point(l));
+  vol.update(volPoint(l)); paintInds();
+}
+async function pollLive() {
+  if (document.hidden || !bars.length || !marketOpen) return;
+  const q = await apiGet('/quote/' + encodeURIComponent(currentSymbol));
+  if (!q || q.price == null || !bars.length) return;
+  const l = bars[bars.length - 1]; l.c = q.price; l.h = Math.max(l.h, q.price); l.l = Math.min(l.l, q.price);
+  if (ctype === 'heikin') main.setData(mainData()); else main.update(point(l));
+  showPrice(q.price); legend(null);
+  if (Date.now() - lastSync > 15000) { lastSync = Date.now(); syncBars(); }
+}
+
+// ---------- toolbars ----------
+function seg(el, items, cur, fn) {
+  el.innerHTML = items.map(([k, label]) => `<button data-k="${k}" class="${k === cur ? 'on' : ''}">${label}</button>`).join('');
+  el.querySelectorAll('button').forEach(b => b.onclick = () => fn(b.dataset.k, b));
+}
+seg($('range-bar'), RANGES.map(r => [r[0], r[0]]), null, (k, b) => {
+  const r = RANGES.find(x => x[0] === k); tf = r[1];
+  document.querySelectorAll('#tf-bar button').forEach(x => x.classList.toggle('on', x.dataset.k === tf));
+  document.querySelectorAll('#range-bar button').forEach(x => x.classList.toggle('on', x === b)); loadChart(r);
+});
+seg($('tf-bar'), TFS, tf, (k, b) => { tf = k; document.querySelectorAll('#range-bar button').forEach(x => x.classList.remove('on')); document.querySelectorAll('#tf-bar button').forEach(x => x.classList.toggle('on', x === b)); loadChart(); });
+$('type-sel').innerHTML = TYPES.map(([k, l]) => `<option value="${k}">${l}</option>`).join('');
+$('type-sel').onchange = e => { ctype = e.target.value; makeMain(); paint(false); };
+seg($('ind-bar'), INDS, null, (k, b) => { on[k] = !on[k]; b.classList.toggle('on', on[k]); paintInds(); });
+seg($('tool-bar'), TOOLS, 'cursor', k => setTool(k));
+makeMain();
+
+
+// ---------- status (slow-ish poll) ----------
+async function loadStatus() {
+  const st = await apiGet('/status');
+  if (!st) return;
+  const m = $('badge-market'); marketOpen = !!st.market_open;
+  m.textContent = st.market_open ? 'Market open' : 'Market closed';
+  m.className = 'badge ' + (st.market_open ? 'open' : 'closed');
+}
+
+// ---------- ticker search + details ----------
+let searchTimer = null;
+function showPrice(px) {
+  if (px == null || !tickerInfo) return;
+  $('t-px').textContent = money(px);
+  const pc = tickerInfo.prev_close;
+  if (pc) { const ch = px - pc; $('t-chg').textContent = `${ch >= 0 ? '+' : ''}${ch.toFixed(2)} (${(ch / pc * 100).toFixed(2)}%)`; $('t-chg').className = ch >= 0 ? 'pos' : 'neg'; }
+}
+function renderTicker(t) {
+  $('t-sym').textContent = t.symbol; $('t-name').textContent = t.name || '';
+  showPrice(t.price);
+  $('t-rng').textContent = t.day_low != null ? `Day ${t.day_low.toFixed(2)} – ${t.day_high.toFixed(2)}   Bid ${t.bid ?? '—'}  Ask ${t.ask ?? '—'}` : '';
+  const tag = $('t-opt'); tag.hidden = false;
+  if (!t.tradable) { tag.textContent = 'Not tradable'; tag.className = 'tag bad'; }
+  else if (t.has_options === false) { tag.textContent = 'No listed options'; tag.className = 'tag bad'; }
+  else { tag.textContent = t.has_options ? 'Options available' : 'Options unverified'; tag.className = 'tag ok'; }
+}
+async function selectSymbol(sym, skipChart) {
+  sym = sym.trim().toUpperCase(); if (!sym) return;
+  try {
+    const r = await fetch(API + '/ticker/' + encodeURIComponent(sym));
+    if (!r.ok) throw new Error(await r.text());
+    tickerInfo = await r.json();
+  } catch (e) { toast(errMsg(e)); return; }
+  currentSymbol = tickerInfo.symbol; hlines = []; trends = []; redrawHlines(); redrawTrends();
+  $('results').hidden = true; $('q').value = ''; $('q').placeholder = tickerInfo.symbol + ' · search another';
+  renderTicker(tickerInfo); updateRunState(); if (!skipChart) loadChart(); loadPositions(); loadRisk();
+}
+$('q').addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  const q = $('q').value.trim();
+  if (!q) { $('results').hidden = true; return; }
+  searchTimer = setTimeout(async () => {
+    const r = await apiGet('/search?q=' + encodeURIComponent(q));
+    const box = $('results');
+    if (!r || !r.results.length) { box.innerHTML = '<div><span>No match. Press Enter to try it as a ticker.</span></div>'; box.hidden = false; return; }
+    box.innerHTML = r.results.map(x => `<div data-s="${x.symbol}"><b>${x.symbol}</b><span>${x.name}</span></div>`).join('');
+    box.hidden = false;
+    box.querySelectorAll('div[data-s]').forEach(d => d.onclick = () => selectSymbol(d.dataset.s));
+  }, 200);
+});
+$('q').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { const first = $('results').querySelector('div[data-s]'); selectSymbol(first && !/^[A-Za-z.]{1,6}$/.test($('q').value.trim()) ? first.dataset.s : $('q').value); }
+  if (e.key === 'Escape') $('results').hidden = true;
+});
+document.addEventListener('click', e => { if (!e.target.closest('.search')) $('results').hidden = true; });
+
+// ---------- trading session ----------
+let sess = { state: 'idle' }, sessAt = Date.now();
+const ACTIVE = ['running', 'waiting_for_market', 'stopping'];
+const STATE_LABEL = { idle: 'Idle', running: 'Trading', waiting_for_market: 'Waiting for the market to open', stopping: 'Stopping after this cycle', stopped: 'Stopped', error: 'Stopped after errors' };
+const sessActive = () => ACTIVE.includes(sess.state);
+function fmtSecs(n) { n = Math.max(0, Math.round(n)); return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`; }
+function updateRunState() {
+  const btn = $('btn-run'); const t = tickerInfo;
+  const ok = t && t.tradable && t.has_options !== false && !sessActive();
+  btn.disabled = !ok;
+  btn.title = !t ? 'Search and select a ticker first' : !t.tradable ? `${t.symbol} is not tradable on Alpaca` : t.has_options === false ? `${t.symbol} has no listed options, and this agent trades volatility through options` : '';
+}
+function renderSession() {
+  const act = sessActive();
+  $('sess-state').textContent = STATE_LABEL[sess.state] || sess.state; $('sess-state').className = 'sess-state ' + (act ? 'on' : '');
+  $('sess-sym').textContent = sess.symbol || '—'; $('sess-cycles').textContent = sess.cycles || 0; $('sess-orders').textContent = sess.orders_sent || 0;
+  $('btn-run').hidden = act; $('btn-stop').hidden = !act; $('btn-flat').hidden = !act;
+  $('btn-stop').disabled = $('btn-flat').disabled = sess.state === 'stopping';
+  $('sess-asof').textContent = sess.symbol ? `${sess.symbol} · continuous` : '—';
+  const ev = sess.events || [];
+  if (ev.length) $('sess-events').innerHTML = ev.map(e => `<div class="${e.kind === 'error' ? 'neg' : ''}"><span class="dim">${new Date(e.t).toLocaleTimeString('en-US', { timeZone: 'America/New_York' })}</span>  ${e.msg}</div>`).join('');
+  updateRunState();
+}
+async function loadSession() {
+  const st = await apiGet('/session'); if (!st) return;
+  const was = sess.cycles; sess = st; sessAt = Date.now(); renderSession();
+  if (st.last_result) renderSignal(st.last_result);
+  if (st.cycles !== was) refreshFast();
+}
+function confirmModal(title, body, okLabel, fn) {
+  $('m-title').textContent = title; $('m-body').textContent = body; $('m-ok').textContent = okLabel; $('modal').hidden = false;
+  $('m-ok').onclick = async () => { $('modal').hidden = true; await fn(); };
+  $('m-cancel').onclick = () => $('modal').hidden = true;
+}
+$('btn-run').onclick = () => {
+  confirmModal(`Start trading ${currentSymbol}?`,
+    'The agent will trade this stock continuously on your Alpaca paper account while the market is open, and keeps going until you press Stop.',
+    'Start trading', async () => {
+      try { sess = await apiPost('/session/start', { symbol: currentSymbol }); sessAt = Date.now(); renderSession(); }
+      catch (e) { toast(errMsg(e)); }
+    });
+};
+$('btn-stop').onclick = async () => {
+  try { sess = await apiPost('/session/stop', { flatten: false }); renderSession(); toast('Stopping. Open positions stay open and are not managed while stopped.'); } catch (e) { toast(errMsg(e)); }
+};
+$('btn-flat').onclick = () => confirmModal(`Stop and close ${sess.symbol} positions?`,
+  'The agent stops after its current cycle, then cancels its open orders for this symbol and closes its option and share positions, short legs first.',
+  'Stop and close', async () => {
+    try { sess = await apiPost('/session/stop', { flatten: true }); renderSession(); } catch (e) { toast(errMsg(e)); }
+  });
+
+// ---------- live order blotter (fast poll) ----------
+function fmtAge(iso) {
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (s < 60) return Math.round(s) + 's';
+  if (s < 3600) return Math.round(s/60) + 'm';
+  return Math.round(s/3600) + 'h';
+}
+async function loadOrders() {
+  const o = await apiGet('/orders');
+  if (!o) return;
+  document.getElementById('orders-asof').textContent = 'live · ' + new Date(o.as_of_utc).toLocaleTimeString('en-US', { timeZone: 'America/New_York' });
+  const body = document.getElementById('orders-body');
+  const rows = [...(o.open_orders||[]), ...(o.recently_filled||[]).slice(0,5)];
+  if (!rows.length) { body.innerHTML = '<tr class="empty-row"><td colspan="6">No open orders</td></tr>'; return; }
+  body.innerHTML = rows.map(r => `
+    <tr>
+      <td>${r.kind}</td>
+      <td class="${r.status==='filled'?'pos':r.is_stale?'neg':''}">${r.status}${r.is_stale?' (stale)':''}</td>
+      <td class="num">${r.qty}</td>
+      <td class="num">${r.filled_qty}</td>
+      <td class="num">${r.filled_avg_price!=null?'$'+r.filled_avg_price.toFixed(2):'—'}</td>
+      <td class="num dim">${fmtAge(r.updated_at||r.submitted_at)}</td>
+    </tr>`).join('');
+}
+
+// ---------- positions ----------
+async function loadPositions() {
+  const body = document.getElementById('positions-body');
+  let r; try { r = await fetch(API + '/positions?symbol=' + encodeURIComponent(sess.symbol || currentSymbol)); } catch (e) { return; }
+  if (!r.ok) { body.innerHTML = `<tr class="empty-row"><td colspan="10">Could not load positions: ${(await r.text()).slice(0, 160)}</td></tr>`; return; }
+  const p = await r.json(), rows = p.all_positions || [];
+  if (!rows.length) { body.innerHTML = '<tr class="empty-row"><td colspan="10">No open positions</td></tr>'; return; }
+  const f = (v, d = 2) => v == null ? '—' : Number(v).toFixed(d);
+  body.innerHTML = rows.map(x => `<tr><td>${x.symbol}${x.asset_class === 'us_option' ? '' : ' <span class="dim">shares</span>'}</td><td class="num">${x.qty}</td><td class="num">${f(x.avg_entry)}</td><td class="num">${f(x.price)}</td><td class="num">$${Number(x.market_value).toLocaleString(undefined, { maximumFractionDigits: 0 })}</td><td class="num ${x.unrealized_pl >= 0 ? 'pos' : 'neg'}">${x.unrealized_pl >= 0 ? '+' : ''}${f(x.unrealized_pl)} (${f(x.unrealized_plpc * 100, 1)}%)</td><td class="num">${f(x.delta_shares, 1)}</td><td class="num">${f(x.gamma_shares)}</td><td class="num">${f(x.vega_dollars, 1)}</td><td class="num">${f(x.theta_dollars, 1)}</td></tr>`).join('');
+}
+
+// ---------- decisions (slow, once-per-cycle cadence) ----------
+async function loadDecisions() {
+  const d = await apiGet('/decisions?limit=15');
+  if (!d) return;
+  if (d.last_run_utc) {
+    const mins = Math.round((Date.now() - new Date(d.last_run_utc).getTime())/60000);
+    document.getElementById('decisions-asof').textContent = `last cycle ${mins}m ago`;
+  }
+  const body = document.getElementById('decisions-body');
+  const rows = (d.decisions||[]).slice().reverse();
+  if (!rows.length) { body.innerHTML = '<tr class="empty-row"><td colspan="5">No cycles run yet</td></tr>'; return; }
+  body.innerHTML = rows.map(r => `
+    <tr>
+      <td class="dim">${new Date(r.timestamp_utc).toLocaleTimeString('en-US', { timeZone: 'America/New_York' })}</td>
+      <td>${r.regime||'—'}</td>
+      <td class="num ${r.composite_edge>0?'pos':r.composite_edge<0?'neg':''}">${r.composite_edge!=null?r.composite_edge.toFixed(2):'—'}</td>
+      <td>${r.direction||'flat'}</td>
+      <td class="dim" style="font-size:10.5px;">${(r.orders||[]).length ? (r.orders||[]).join('; ').slice(0,60) : '—'}</td>
+    </tr>`).join('');
+}
+
+// ---------- risk panel ----------
+function pctBar(el, valEl, headroom, limit, label) {
+  const used = Math.max(0, limit - headroom);
+  const pct = limit > 0 ? Math.min(100, (used/limit)*100) : 0;
+  el.style.width = pct + '%';
+  if (pct > 90) el.style.background = 'var(--red)'; 
+  valEl.textContent = pct.toFixed(0) + '%';
+}
+async function loadRisk() {
+  const r = await apiGet('/risk?symbol=' + encodeURIComponent(sess.symbol || currentSymbol));
+  if (!r) return;
+  document.getElementById('risk-asof').textContent = new Date().toLocaleTimeString('en-US', { timeZone: 'America/New_York' });
+  document.getElementById('stat-equity').textContent = '$' + Number(r.equity).toLocaleString(undefined,{maximumFractionDigits:0});
+  const ddEl = document.getElementById('stat-drawdown');
+  ddEl.textContent = (r.drawdown_pct*100).toFixed(1) + '%';
+  ddEl.className = 'value ' + (r.drawdown_pct < -0.05 ? 'neg' : '');
+  const dpEl = document.getElementById('stat-daily-pnl');
+  dpEl.textContent = r.daily_pnl_pct!=null ? (r.daily_pnl_pct*100).toFixed(2)+'%' : '—';
+  dpEl.className = 'value ' + (r.daily_pnl_pct<0?'neg':r.daily_pnl_pct>0?'pos':'');
+  const wpEl = document.getElementById('stat-weekly-pnl');
+  wpEl.textContent = r.weekly_pnl_pct!=null ? (r.weekly_pnl_pct*100).toFixed(2)+'%' : '—';
+  wpEl.className = 'value ' + (r.weekly_pnl_pct<0?'neg':r.weekly_pnl_pct>0?'pos':'');
+
+  pctBar(document.getElementById('bar-delta'), document.getElementById('bar-delta-val'),
+         r.greek_headroom.delta_shares, r.greek_limits.max_delta_risk_pct*r.equity, 'Delta');
+  pctBar(document.getElementById('bar-gamma'), document.getElementById('bar-gamma-val'),
+         r.greek_headroom.gamma_shares, r.greek_limits.max_gamma_risk_pct*r.equity, 'Gamma');
+  pctBar(document.getElementById('bar-vega'), document.getElementById('bar-vega-val'),
+         r.greek_headroom.vega_dollars, r.greek_limits.max_vega_risk_pct*r.equity, 'Vega');
+  pctBar(document.getElementById('bar-theta'), document.getElementById('bar-theta-val'),
+         r.greek_headroom.theta_dollars, r.greek_limits.max_theta_risk_pct*r.equity, 'Theta');
+
+  const slot = document.getElementById('kill-banner-slot');
+  if (r.kill_switch) {
+    slot.innerHTML = `<div class="grid" style="grid-template-columns:1fr;padding-bottom:0;"><div class="kill-banner">⛔ DRAWDOWN KILL SWITCH TRIPPED — ${(r.drawdown_pct*100).toFixed(1)}% below high-water mark (limit ${(r.max_drawdown_pct*100).toFixed(0)}%). No new entries.</div></div>`;
+  } else if (r.loss_breaker_tripped) {
+    slot.innerHTML = `<div class="grid" style="grid-template-columns:1fr;padding-bottom:0;"><div class="kill-banner">⚠ LOSS CIRCUIT BREAKER — ${r.loss_breaker_reasons.join(' · ')}</div></div>`;
+  } else {
+    slot.innerHTML = '';
+  }
+}
+
+// ---------- events ----------
+async function loadEvents() {
+  const e = await apiGet('/calendar?horizon_days=30');
+  if (!e) return;
+  const list = document.getElementById('events-list');
+  if (!e.events || !e.events.length) { list.innerHTML = '<div class="event-row dim">No FOMC/CPI/NFP in the next 30 days</div>'; return; }
+  list.innerHTML = e.events.map(ev => `
+    <div class="event-row">
+      <span class="event-chip ${ev.label}">${ev.label}</span>
+      <span>${ev.date}</span>
+      <span class="event-days">${ev.days_away === 0 ? 'today' : 'in ' + ev.days_away + 'd'}</span>
+    </div>`).join('');
+}
+
+// ---------- signal panel + notes (populated from the latest /run result if we have one) ----------
+function renderSignal(result) {
+  if (!result) return;
+  const edge = result.composite_edge || 0;
+  document.getElementById('edge-marker').style.left = (50 + edge*50) + '%';
+  const edgeVal = document.getElementById('edge-val');
+  edgeVal.textContent = edge.toFixed(2);
+  edgeVal.className = 'edge-val ' + (edge>0.1?'pos':edge<-0.1?'neg':'');
+  document.getElementById('stat-regime').textContent = result.regime_label || '—';
+  document.getElementById('stat-forecast').textContent = result.forecast_vol!=null ? (result.forecast_vol*100).toFixed(1)+'%' : '—';
+  document.getElementById('stat-iv').textContent = result.live_atm_iv!=null ? (result.live_atm_iv*100).toFixed(1)+'%' : '—';
+  document.getElementById('stat-vrpz').textContent = result.vrp_z!=null ? result.vrp_z.toFixed(2) : '—';
+  document.getElementById('rationale-box').textContent = result.signal_rationale || '—';
+
+  const tags = [];
+  if (result.heston_cross_check && result.heston_cross_check.available) {
+    tags.push(`<span class="leg-tag ${result.heston_cross_check.data_quality_ok?'agree':'disagree'}">Heston ${result.heston_cross_check.data_quality_ok?'✓':'⚠'}</span>`);
+  }
+  if (result.flow_toxicity && result.flow_toxicity.available) {
+    tags.push(`<span class="leg-tag ${result.flow_toxicity.regime==='Normal'?'agree':'disagree'}">Flow: ${result.flow_toxicity.regime}</span>`);
+  }
+  if (result.event_risk) {
+    if (result.event_risk.short_vol_blocked) tags.push(`<span class="leg-tag disagree">Event: blocked</span>`);
+    else if (result.event_risk.jump_flagged) tags.push(`<span class="leg-tag disagree">Jump: ${result.event_risk.jump_z.toFixed(1)}σ</span>`);
+  }
+  if (result.historical_iv_source) tags.push(`<span class="leg-tag">IV proxy: ${result.historical_iv_source}</span>`);
+  document.getElementById('leg-tags').innerHTML = tags.join('');
+
+  const notes = document.getElementById('notes-list');
+  notes.innerHTML = (result.notes && result.notes.length) ? result.notes.map(n => `<div>${n}</div>`).join('') : '<div class="dim">No notes this cycle.</div>';
+}
+
+// ---------- equity curve + metrics ----------
+async function loadMetrics() {
+  const m = await apiGet('/metrics');
+  if (!m) return;
+  if (m.equity_curve && m.equity_curve.length) {
+    equitySeries.setData(m.equity_curve.map(p => ({ time: p.t.slice(0,10), value: p.equity })));
+    equityChart.timeScale().fitContent();
+  }
+  document.getElementById('stat-sharpe').textContent = m.sharpe!=null ? m.sharpe.toFixed(2) : '—';
+  document.getElementById('stat-maxdd').textContent = m.max_drawdown!=null ? (m.max_drawdown*100).toFixed(1)+'%' : '—';
+}
+
+// ---------- clock + countdown ----------
+setInterval(() => {
+  $('clock').textContent = new Date().toLocaleTimeString('en-US', { timeZone: ET }) + ' ET';
+  $('sess-next').textContent = sess.seconds_to_next != null && sessActive() ? fmtSecs(sess.seconds_to_next - (Date.now() - sessAt) / 1000) : '—';
+}, 1000);
+
+// ---------- polling ----------
+function refreshFast() { loadOrders(); loadPositions(); loadRisk(); }
+function refreshSlow() { loadStatus(); loadDecisions(); loadMetrics(); loadEvents(); }
+(async () => {
+  await loadSession();
+  currentSymbol = sess.symbol || 'SPY';
+  loadChart(); selectSymbol(currentSymbol, true); refreshFast(); refreshSlow();
+  setInterval(refreshFast, 8000); setInterval(refreshSlow, 30000);
+  setInterval(loadSession, 4000); setInterval(pollLive, 2000);
+})();
+</script>
+</body>
+</html>
