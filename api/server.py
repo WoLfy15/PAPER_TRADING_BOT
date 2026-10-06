@@ -577,28 +577,24 @@ def watchlist():
     return {"watchlist": SETTINGS.watchlist}
 
 
+@app.get("/")
 @app.get("/dashboard")
 def dashboard():
-    """Serves dashboard.html directly from this API's own origin, so
-    opening it needs nothing more than this server running --
-    http://localhost:8000/dashboard -- with no separate static-file
-    server and no CORS considerations (same origin as every /api call
-    the page itself makes). Opening dashboard.html straight from disk
-    (file://) also still works: CORS is wide open (see this module's
-    top) specifically to support that path too."""
+    """Serves dashboard.html directly from this API's root and /dashboard origin."""
     dashboard_path = Path(__file__).resolve().parent.parent / "dashboard.html"
     if not dashboard_path.exists():
         raise HTTPException(status_code=404, detail="dashboard.html not found next to this project's root.")
     return FileResponse(dashboard_path, media_type="text/html")
 
 
-@app.get("/")
-def root():
+@app.get("/api")
+def api_index():
     return {
-        "service": "alpaca-vol-agent", "docs": "/docs", "dashboard": "/dashboard",
+        "service": "alpaca-vol-agent", "docs": "/docs", "dashboard": "/",
         "endpoints": [
             "/health", "/status", "/chain", "/chart/bars", "/search", "/quote/{symbol}", "/ticker/{symbol}", "/session", "/orders", "/risk", "/calendar",
             "/positions", "/decisions", "/metrics", "/watchlist", "/dashboard",
             "POST /run", "POST /run-all", "POST /backtest", "POST /session/start", "POST /session/stop",
         ],
     }
+

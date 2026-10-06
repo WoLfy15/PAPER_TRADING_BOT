@@ -90,10 +90,12 @@ def test_chart_bars_endpoint(api_client):
 
 
 def test_dashboard_route_serves_html(api_client):
-    r = api_client.get("/dashboard")
-    assert r.status_code == 200
-    assert "text/html" in r.headers["content-type"]
-    assert "addCandlestickSeries" in r.text
+    for path in ("/", "/dashboard"):
+        r = api_client.get(path)
+        assert r.status_code == 200
+        assert "text/html" in r.headers["content-type"]
+        assert "addCandlestickSeries" in r.text
+
 
 
 def test_run_endpoint_carries_over_settings_fields_not_just_symbol_and_dry_run(api_client):
